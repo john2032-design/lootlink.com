@@ -1,0 +1,16 @@
+{
+  "name": "lootlink-bypass-api",
+  "version": "1.0.0",
+  "description": "API for Lootlink bypass",
+  "main": "api/bypass.js",
+  "scripts": {
+    "dev": "node api/bypass.js"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^123.0.0",
+    "puppeteer-core": "^22.11.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
