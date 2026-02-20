@@ -1,14 +1,10 @@
-// api/bypass.js
-
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 
-// The lootlinkBypassScript remains the same as before
 const lootlinkBypassScript = `
 ;(function () {
   'use strict';
 
-  // Core configurations and helpers
   const CONFIG = Object.freeze({
     HEARTBEAT_INTERVAL: 1000,
     MAX_RECONNECT_DELAY: 30000,
@@ -64,7 +60,6 @@ const lootlinkBypassScript = `
     }
   }
 
-  // Decoder logic
   function decodeURIxor(encodedString, prefixLength = 5) {
     const base64Decoded = atob(encodedString);
     const prefix = base64Decoded.substring(0, prefixLength);
@@ -79,7 +74,6 @@ const lootlinkBypassScript = `
     return decodedChars.join('');
   }
 
-  // WebSocket logic
   class RobustWebSocket {
     constructor(url, options = {}) {
       this.url = url;
@@ -185,10 +179,8 @@ const lootlinkBypassScript = `
     }
   }
 
-  // State
   const state = { processStartTime: Date.now() };
 
-  // Task detection
   function detectTaskInfo() {
     let countdownSeconds = 60;
     let taskName = 'Processing';
@@ -218,7 +210,6 @@ const lootlinkBypassScript = `
     return { countdownSeconds, taskName };
   }
 
-  // Observer and modifier logic
   function modifyParentElement(targetElement) {
     const parentElement = targetElement.parentElement;
     if (!parentElement) return;
@@ -276,7 +267,6 @@ const lootlinkBypassScript = `
     }
   }
 
-  // Fetch override logic (/tc intercept)
   function initLocalLootlinkFetchOverride() {
     const originalFetch = window.fetch;
     window.fetch = function (url, config) {
@@ -336,7 +326,6 @@ const lootlinkBypassScript = `
     };
   }
 
-  // Main init
   function runLootlinkBypass() {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
@@ -355,9 +344,11 @@ const lootlinkBypassScript = `
 `;
 
 export default async function handler(req, res) {
+  const startTime = Date.now();
   const targetUrl = req.query.url;
   if (!targetUrl) {
-    return res.status(400).json({ error: 'Missing url parameter' });
+    const time_taken = ((Date.now() - startTime) / 1000).toFixed(2);
+    return res.status(400).json({ status: 'error', result: 'Missing url parameter', time_taken });
   }
 
   try {
@@ -371,7 +362,6 @@ export default async function handler(req, res) {
     });
     const page = await browser.newPage();
 
-    // Optimize by aborting unnecessary resources
     await page.setRequestInterception(true);
     page.on('request', (request) => {
       const type = request.resourceType();
@@ -382,30 +372,30 @@ export default async function handler(req, res) {
       }
     });
 
-    // Inject the bypass script before loading the page
     await page.evaluateOnNewDocument(lootlinkBypassScript);
 
-    // Navigate to the target URL
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Poll for window.bypassedUrl with timeout (adjusted to 50s for Vercel compatibility)
     let bypassedUrl = null;
-    const startTime = Date.now();
-    const maxWait = 50000; // 50 seconds to fit within Vercel Pro's 60s timeout
-    while (!bypassedUrl && Date.now() - startTime < maxWait) {
+    const maxWait = 50000;
+    const pollStart = Date.now();
+    while (!bypassedUrl && Date.now() - pollStart < maxWait) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       bypassedUrl = await page.evaluate(() => window.bypassedUrl);
     }
 
     await browser.close();
 
+    const time_taken = ((Date.now() - startTime) / 1000).toFixed(2);
+
     if (bypassedUrl) {
-      res.json({ bypassedUrl });
+      res.json({ status: 'success', result: bypassedUrl, time_taken });
     } else {
-      res.status(500).json({ error: 'Bypass failed or timed out' });
+      res.status(500).json({ status: 'error', result: 'Bypass failed or timed out', time_taken });
     }
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Internal server error' });
+    const time_taken = ((Date.now() - startTime) / 1000).toFixed(2);
+    res.status(500).json({ status: 'error', result: 'Internal server error', time_taken });
   }
 }
