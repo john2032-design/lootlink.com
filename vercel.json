@@ -1,4 +1,10 @@
 {
+  "rewrites": [
+    {
+      "source": "/bypass",
+      "destination": "/api/bypass"
+    }
+  ],
   "functions": {
     "api/bypass.js": {
       "maxDuration": 60,
