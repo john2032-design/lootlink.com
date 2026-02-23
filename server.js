@@ -1,169 +1,172 @@
-const express = require('express');
-const puppeteer = require('puppeteer');
-const WebSocket = require('ws');
+  const express = require('express');
+  const WebSocket = require('ws');
+  const cors = require('cors');
+  const app = express();
+  const port = process.env.PORT || 3000;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+  // Enable CORS and JSON parsing
+  app.use(cors());
+  app.use(express.json());
 
-// --- DECODER LOGIC ---
-function decodeURIxor(encodedString, prefixLength = 5) {
-    try {
-        const base64Decoded = Buffer.from(encodedString, 'base64').toString('binary');
-        const prefix = base64Decoded.substring(0, prefixLength);
-        const encodedPortion = base64Decoded.substring(prefixLength);
-        const prefixLen = prefix.length;
-        let decodedString = '';
-        
-        for (let i = 0; i < encodedPortion.length; i++) {
-            const encodedChar = encodedPortion.charCodeAt(i);
-            const prefixChar = prefix.charCodeAt(i % prefixLen);
-            decodedString += String.fromCharCode(encodedChar ^ prefixChar);
-        }
-        return decodeURIComponent(decodedString);
-    } catch (e) {
-        console.error('Decode error:', e);
-        return null;
-    }
-}
+  // --- LOGGING UTILITY (Visible in Render Dashboard) ---
+  const log = (type, endpoint, msg, data = '') => {
+      const timestamp = new Date().toISOString();
+      const prefix = `[${timestamp}] [${endpoint.toUpperCase()}]`;
+      if (type === 'error') {
+          console.error(prefix, msg, data);
+      } else {
+          console.log(prefix, msg, data);
+      }
+  };
 
-// --- MAIN BYPASS LOGIC ---
-async function runBypass(targetUrl) {
-    console.log(`Launching browser for: ${targetUrl}`);
-    
-    const browser = await puppeteer.launch({
-        headless: "new",
-        executablePath: '/usr/bin/google-chrome-stable', // Explicit path for Render
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process', 
-            '--disable-gpu'
-        ]
-    });
+  // --- HELPER: WebSocket Logic ---
+  function connectToLootSocket(wsUrl, originDomain) {
+      return new Promise((resolve, reject) => {
+          const ws = new WebSocket(wsUrl, {
+              headers: {
+                  'Origin': `https://${originDomain}`,
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+              }
+          });
 
-    try {
-        const page = await browser.newPage();
-        
-        // Randomize User Agent to look less like a bot
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          let isResolved = false;
+          let heartbeatInterval;
 
-        let wsUrl = null;
-        let foundData = false;
+          // 15s Timeout Safety
+          const timeoutTimer = setTimeout(() => {
+              if (!isResolved) {
+                  isResolved = true;
+                  ws.terminate();
+                  reject(new Error('WebSocket connection timed out'));
+              }
+          }, 15000);
 
-        await page.setRequestInterception(true);
-        
-        page.on('request', (req) => req.continue());
+          ws.on('open', () => {
+              ws.send('0'); // Initial Heartbeat
+              heartbeatInterval = setInterval(() => {
+                  if (ws.readyState === WebSocket.OPEN) ws.send('0');
+              }, 1000);
+          });
 
-        page.on('response', async (response) => {
-            const url = response.url();
-            // Look for the traffic containing the tokens
-            if (url.includes('/tc') && !foundData) {
-                try {
-                    const data = await response.json();
-                    let urid = '';
-                    let task_id = 54;
-                    
-                    if (Array.isArray(data)) {
-                         data.forEach(item => { urid = item.urid; });
-                    }
+          ws.on('message', (data) => {
+              const message = data.toString();
+              if (message.includes('r:')) {
+                  const encrypted = message.replace('r:', '');
+                  if (!isResolved) {
+                      isResolved = true;
+                      clearTimeout(timeoutTimer);
+                      clearInterval(heartbeatInterval);
+                      ws.close();
+                      resolve(encrypted);
+                  }
+              }
+          });
 
-                    if (urid) {
-                        const globals = await page.evaluate(() => {
-                            return {
-                                domain: window.INCENTIVE_SERVER_DOMAIN,
-                                key: window.KEY
-                            };
-                        });
+          ws.on('error', (err) => {
+              if (!isResolved) {
+                  isResolved = true;
+                  clearTimeout(timeoutTimer);
+                  clearInterval(heartbeatInterval);
+                  reject(err);
+              }
+          });
+      });
+  }
 
-                        if (globals.domain && globals.key) {
-                            const shard = urid.slice(-5) % 3;
-                            wsUrl = `wss://${shard}.${globals.domain}/c?uid=${urid}&cat=${task_id}&key=${globals.key}`;
-                            foundData = true;
-                            console.log('Tokens captured successfully.');
-                        }
-                    }
-                } catch (err) {
-                    // Silent catch for non-JSON responses
-                }
-            }
-        });
+  // --- HELPER: XOR Decode Logic ---
+  function decodeURIxor(encodedString, prefixLength = 5) {
+      try {
+          const base64Decoded = Buffer.from(encodedString, 'base64').toString('binary');
+          const prefix = base64Decoded.substring(0, prefixLength);
+          const encodedPortion = base64Decoded.substring(prefixLength);
+          const prefixLen = prefix.length;
+          
+          let decoded = '';
+          for (let i = 0; i < encodedPortion.length; i++) {
+              const encodedChar = encodedPortion.charCodeAt(i);
+              const prefixChar = prefix.charCodeAt(i % prefixLen);
+              decoded += String.fromCharCode(encodedChar ^ prefixChar);
+          }
+          
+          return decodeURIComponent(decoded);
+      } catch (e) {
+          throw new Error('XOR Decode failed: ' + e.message);
+      }
+  }
 
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 45000 });
+  // ==========================================
+  // ENDPOINT 1: WebSocket Handler
+  // URL: /ws?urid=...&cat=...&key=...&domain=...
+  // ==========================================
+  app.get('/ws', async (req, res) => {
+      const { urid, cat, key, domain } = req.query;
+      const requestId = Math.random().toString(36).substring(7);
 
-        // Wait for the WS URL to be captured
-        let attempts = 0;
-        while (!foundData && attempts < 20) {
-            await new Promise(r => setTimeout(r, 500));
-            attempts++;
-        }
+      log('info', 'WS-ENDPOINT', `[${requestId}] Request received`, { urid, domain });
 
-        await browser.close();
+      if (!urid || !domain || !key) {
+          return res.status(400).json({ success: false, error: 'Missing parameters' });
+      }
 
-        if (!wsUrl) {
-            throw new Error("Failed to capture WebSocket parameters. The site may have blocked the headless browser.");
-        }
+      try {
+          const subdomainIndex = urid.slice(-5) % 3;
+          const wsUrl = `wss://${subdomainIndex}.${domain}/c?uid=${urid}&cat=${cat}&key=${key}`;
+          
+          log('info', 'WS-ENDPOINT', `[${requestId}] Connecting to`, wsUrl);
+          
+          const encryptedString = await connectToLootSocket(wsUrl, domain);
+          
+          log('info', 'WS-ENDPOINT', `[${requestId}] Got encrypted string`, encryptedString.substring(0, 20) + '...');
+          
+          return res.json({ 
+              success: true, 
+              encrypted: encryptedString 
+          });
 
-        // Connect to WebSocket
-        return new Promise((resolve, reject) => {
-            const ws = new WebSocket(wsUrl);
-            
-            ws.on('open', () => {
-                ws.send('0');
-                const interval = setInterval(() => {
-                    if (ws.readyState === WebSocket.OPEN) ws.send('0');
-                }, 1000);
-                ws.on('close', () => clearInterval(interval));
-            });
+      } catch (error) {
+          log('error', 'WS-ENDPOINT', `[${requestId}] Failed`, error.message);
+          return res.status(500).json({ success: false, error: error.message });
+      }
+  });
 
-            ws.on('message', (data) => {
-                const msg = data.toString();
-                if (msg.includes('r:')) {
-                    const encrypted = msg.replace('r:', '');
-                    const finalUrl = decodeURIxor(encrypted);
-                    ws.close();
-                    resolve(finalUrl);
-                }
-            });
+  // ==========================================
+  // ENDPOINT 2: XOR Decoder
+  // URL: /decode?str=...
+  // ==========================================
+  app.get('/decode', (req, res) => {
+      const { str } = req.query;
+      
+      // Note: 'str' might be very long, ensure client URL encodes it properly
+      if (!str) {
+          return res.status(400).json({ success: false, error: 'Missing "str" parameter' });
+      }
 
-            ws.on('error', (err) => reject(err));
-            
-            setTimeout(() => {
-                ws.close();
-                reject(new Error("WebSocket timed out"));
-            }, 30000);
-        });
+      log('info', 'DECODE-ENDPOINT', 'Decoding string length:', str.length);
 
-    } catch (error) {
-        if (browser) await browser.close();
-        throw error;
-    }
-}
+      try {
+          let finalUrl = decodeURIxor(str);
 
-app.get('/bypass', async (req, res) => {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ error: 'Missing url parameter' });
+          // Luarmor Fix
+          if (/^https?:\/\/ads\.luarmor\.net\//i.test(finalUrl)) {
+              log('info', 'DECODE-ENDPOINT', 'Luarmor detected, applying fix');
+              finalUrl = `https://vortixworld-luarmor.vercel.app/redirect?to=${finalUrl}`;
+          }
 
-    try {
-        const result = await runBypass(url);
-        
-        if (result && result.includes('ads.luarmor.net')) {
-             return res.json({ 
-                status: 'success', 
-                result: `https://vortixworld-luarmor.vercel.app/redirect?to=${result}` 
-            });
-        }
+          log('info', 'DECODE-ENDPOINT', 'Success', finalUrl);
+          
+          return res.json({ 
+              success: true, 
+              result: finalUrl 
+          });
 
-        res.json({ status: 'success', result: result });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: error.message });
-    }
-});
+      } catch (error) {
+          log('error', 'DECODE-ENDPOINT', 'Failed', error.message);
+          return res.status(500).json({ success: false, error: error.message });
+      }
+  });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+  app.get('/', (req, res) => res.send('Vortix Split-API Running'));
+
+  app.listen(port, () => {
+      log('info', 'SYSTEM', `Server started on port ${port}`);
+  });
