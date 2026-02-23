@@ -5,10 +5,9 @@ const WebSocket = require('ws');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- DECODER LOGIC (Ported from Userscript) ---
+// --- DECODER LOGIC ---
 function decodeURIxor(encodedString, prefixLength = 5) {
     try {
-        // Node.js equivalent of atob
         const base64Decoded = Buffer.from(encodedString, 'base64').toString('binary');
         const prefix = base64Decoded.substring(0, prefixLength);
         const encodedPortion = base64Decoded.substring(prefixLength);
@@ -29,8 +28,11 @@ function decodeURIxor(encodedString, prefixLength = 5) {
 
 // --- MAIN BYPASS LOGIC ---
 async function runBypass(targetUrl) {
+    console.log(`Launching browser for: ${targetUrl}`);
+    
     const browser = await puppeteer.launch({
         headless: "new",
+        executablePath: '/usr/bin/google-chrome-stable', // Explicit path for Render
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -43,39 +45,33 @@ async function runBypass(targetUrl) {
         ]
     });
 
-    const page = await browser.newPage();
-    
-    // Set a realistic User Agent to avoid immediate blocking
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
-
-    let wsUrl = null;
-    let foundData = false;
-
     try {
-        // Intercept Network Requests to find the API call
+        const page = await browser.newPage();
+        
+        // Randomize User Agent to look less like a bot
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+        let wsUrl = null;
+        let foundData = false;
+
         await page.setRequestInterception(true);
         
-        page.on('request', (req) => {
-            req.continue();
-        });
+        page.on('request', (req) => req.continue());
 
-        // This is the "Fetch Observer" logic from your userscript
         page.on('response', async (response) => {
             const url = response.url();
-            
-            // The userscript looks for calls to /tc
+            // Look for the traffic containing the tokens
             if (url.includes('/tc') && !foundData) {
                 try {
                     const data = await response.json();
                     let urid = '';
-                    let task_id = 54; // Default from script
+                    let task_id = 54;
                     
                     if (Array.isArray(data)) {
                          data.forEach(item => { urid = item.urid; });
                     }
 
                     if (urid) {
-                        // We also need global variables from the page context (KEY, INCENTIVE_SERVER_DOMAIN)
                         const globals = await page.evaluate(() => {
                             return {
                                 domain: window.INCENTIVE_SERVER_DOMAIN,
@@ -84,49 +80,42 @@ async function runBypass(targetUrl) {
                         });
 
                         if (globals.domain && globals.key) {
-                            // Construct the WebSocket URL exactly like the userscript
                             const shard = urid.slice(-5) % 3;
                             wsUrl = `wss://${shard}.${globals.domain}/c?uid=${urid}&cat=${task_id}&key=${globals.key}`;
                             foundData = true;
+                            console.log('Tokens captured successfully.');
                         }
                     }
                 } catch (err) {
-                    // Ignore JSON parse errors from non-JSON responses
+                    // Silent catch for non-JSON responses
                 }
             }
         });
 
-        console.log(`Navigating to: ${targetUrl}`);
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 45000 });
 
-        // Wait a bit for the /tc request to fire if it hasn't yet
-        const startTime = Date.now();
-        while (!foundData && Date.now() - startTime < 10000) {
+        // Wait for the WS URL to be captured
+        let attempts = 0;
+        while (!foundData && attempts < 20) {
             await new Promise(r => setTimeout(r, 500));
+            attempts++;
         }
 
-        if (!wsUrl) {
-            throw new Error("Failed to capture WebSocket parameters (Cloudflare might have blocked the headless browser).");
-        }
-
-        console.log(`WebSocket URL captured: ${wsUrl}`);
-        
-        // Close browser to save resources, we have the WS URL now
         await browser.close();
 
-        // --- WEBSOCKET CONNECTION ---
+        if (!wsUrl) {
+            throw new Error("Failed to capture WebSocket parameters. The site may have blocked the headless browser.");
+        }
+
+        // Connect to WebSocket
         return new Promise((resolve, reject) => {
             const ws = new WebSocket(wsUrl);
             
             ws.on('open', () => {
-                console.log('WS Open, sending heartbeat...');
-                ws.send('0'); // Heartbeat from userscript
-                
-                // Keep alive interval
+                ws.send('0');
                 const interval = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) ws.send('0');
                 }, 1000);
-
                 ws.on('close', () => clearInterval(interval));
             });
 
@@ -140,14 +129,11 @@ async function runBypass(targetUrl) {
                 }
             });
 
-            ws.on('error', (err) => {
-                reject(err);
-            });
-
-            // Timeout for WS
+            ws.on('error', (err) => reject(err));
+            
             setTimeout(() => {
                 ws.close();
-                reject(new Error("WebSocket timed out waiting for 'r:' message"));
+                reject(new Error("WebSocket timed out"));
             }, 30000);
         });
 
@@ -164,7 +150,6 @@ app.get('/bypass', async (req, res) => {
     try {
         const result = await runBypass(url);
         
-        // Handle the specific Luarmor redirect mentioned in script
         if (result && result.includes('ads.luarmor.net')) {
              return res.json({ 
                 status: 'success', 
