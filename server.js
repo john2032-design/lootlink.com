@@ -4,11 +4,12 @@
   const app = express();
   const port = process.env.PORT || 3000;
 
-  // Enable CORS and JSON parsing
+  // Enable CORS for all origins
   app.use(cors());
   app.use(express.json());
 
-  // --- LOGGING UTILITY (Visible in Render Dashboard) ---
+  // --- LOGGING UTILITY ---
+  // These logs will appear in the Render Dashboard
   const log = (type, endpoint, msg, data = '') => {
       const timestamp = new Date().toISOString();
       const prefix = `[${timestamp}] [${endpoint.toUpperCase()}]`;
@@ -136,7 +137,6 @@
   app.get('/decode', (req, res) => {
       const { str } = req.query;
       
-      // Note: 'str' might be very long, ensure client URL encodes it properly
       if (!str) {
           return res.status(400).json({ success: false, error: 'Missing "str" parameter' });
       }
