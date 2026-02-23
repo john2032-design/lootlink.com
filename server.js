@@ -1,80 +1,20 @@
   const express = require('express');
-  const WebSocket = require('ws');
   const cors = require('cors');
   const app = express();
   const port = process.env.PORT || 3000;
 
-  // Enable CORS for all origins
+  // Enable CORS for all origins (allows your Userscript to hit this)
   app.use(cors());
   app.use(express.json());
 
   // --- LOGGING UTILITY ---
-  // These logs will appear in the Render Dashboard
-  const log = (type, endpoint, msg, data = '') => {
+  const log = (type, msg, data = '') => {
       const timestamp = new Date().toISOString();
-      const prefix = `[${timestamp}] [${endpoint.toUpperCase()}]`;
-      if (type === 'error') {
-          console.error(prefix, msg, data);
-      } else {
-          console.log(prefix, msg, data);
-      }
+      const prefix = `[${timestamp}] [${type.toUpperCase()}]`;
+      console.log(prefix, msg, data);
   };
 
-  // --- HELPER: WebSocket Logic ---
-  function connectToLootSocket(wsUrl, originDomain) {
-      return new Promise((resolve, reject) => {
-          const ws = new WebSocket(wsUrl, {
-              headers: {
-                  'Origin': `https://${originDomain}`,
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-              }
-          });
-
-          let isResolved = false;
-          let heartbeatInterval;
-
-          // 15s Timeout Safety
-          const timeoutTimer = setTimeout(() => {
-              if (!isResolved) {
-                  isResolved = true;
-                  ws.terminate();
-                  reject(new Error('WebSocket connection timed out'));
-              }
-          }, 15000);
-
-          ws.on('open', () => {
-              ws.send('0'); // Initial Heartbeat
-              heartbeatInterval = setInterval(() => {
-                  if (ws.readyState === WebSocket.OPEN) ws.send('0');
-              }, 1000);
-          });
-
-          ws.on('message', (data) => {
-              const message = data.toString();
-              if (message.includes('r:')) {
-                  const encrypted = message.replace('r:', '');
-                  if (!isResolved) {
-                      isResolved = true;
-                      clearTimeout(timeoutTimer);
-                      clearInterval(heartbeatInterval);
-                      ws.close();
-                      resolve(encrypted);
-                  }
-              }
-          });
-
-          ws.on('error', (err) => {
-              if (!isResolved) {
-                  isResolved = true;
-                  clearTimeout(timeoutTimer);
-                  clearInterval(heartbeatInterval);
-                  reject(err);
-              }
-          });
-      });
-  }
-
-  // --- HELPER: XOR Decode Logic ---
+  // --- XOR DECODE LOGIC ---
   function decodeURIxor(encodedString, prefixLength = 5) {
       try {
           const base64Decoded = Buffer.from(encodedString, 'base64').toString('binary');
@@ -91,68 +31,36 @@
           
           return decodeURIComponent(decoded);
       } catch (e) {
-          throw new Error('XOR Decode failed: ' + e.message);
+          throw new Error('XOR calculation failed');
       }
   }
 
   // ==========================================
-  // ENDPOINT 1: WebSocket Handler
-  // URL: /ws?urid=...&cat=...&key=...&domain=...
-  // ==========================================
-  app.get('/ws', async (req, res) => {
-      const { urid, cat, key, domain } = req.query;
-      const requestId = Math.random().toString(36).substring(7);
-
-      log('info', 'WS-ENDPOINT', `[${requestId}] Request received`, { urid, domain });
-
-      if (!urid || !domain || !key) {
-          return res.status(400).json({ success: false, error: 'Missing parameters' });
-      }
-
-      try {
-          const subdomainIndex = urid.slice(-5) % 3;
-          const wsUrl = `wss://${subdomainIndex}.${domain}/c?uid=${urid}&cat=${cat}&key=${key}`;
-          
-          log('info', 'WS-ENDPOINT', `[${requestId}] Connecting to`, wsUrl);
-          
-          const encryptedString = await connectToLootSocket(wsUrl, domain);
-          
-          log('info', 'WS-ENDPOINT', `[${requestId}] Got encrypted string`, encryptedString.substring(0, 20) + '...');
-          
-          return res.json({ 
-              success: true, 
-              encrypted: encryptedString 
-          });
-
-      } catch (error) {
-          log('error', 'WS-ENDPOINT', `[${requestId}] Failed`, error.message);
-          return res.status(500).json({ success: false, error: error.message });
-      }
-  });
-
-  // ==========================================
-  // ENDPOINT 2: XOR Decoder
+  // ENDPOINT: XOR Decoder
   // URL: /decode?str=...
   // ==========================================
   app.get('/decode', (req, res) => {
       const { str } = req.query;
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
       
       if (!str) {
+          log('ERROR', 'Request missing "str" parameter', { ip });
           return res.status(400).json({ success: false, error: 'Missing "str" parameter' });
       }
 
-      log('info', 'DECODE-ENDPOINT', 'Decoding string length:', str.length);
+      log('INFO', `Received Decode Request from ${ip}`);
+      log('DEBUG', `Input Length: ${str.length} chars`);
 
       try {
           let finalUrl = decodeURIxor(str);
 
           // Luarmor Fix
           if (/^https?:\/\/ads\.luarmor\.net\//i.test(finalUrl)) {
-              log('info', 'DECODE-ENDPOINT', 'Luarmor detected, applying fix');
+              log('ACTION', 'Luarmor URL detected, applying redirect fix');
               finalUrl = `https://vortixworld-luarmor.vercel.app/redirect?to=${finalUrl}`;
           }
 
-          log('info', 'DECODE-ENDPOINT', 'Success', finalUrl);
+          log('SUCCESS', 'Decoded URL:', finalUrl);
           
           return res.json({ 
               success: true, 
@@ -160,13 +68,16 @@
           });
 
       } catch (error) {
-          log('error', 'DECODE-ENDPOINT', 'Failed', error.message);
+          log('ERROR', 'Decoding Failed', error.message);
           return res.status(500).json({ success: false, error: error.message });
       }
   });
 
-  app.get('/', (req, res) => res.send('Vortix Split-API Running'));
+  // Health Check
+  app.get('/', (req, res) => {
+      res.send('Vortix Decoder API is Running');
+  });
 
   app.listen(port, () => {
-      log('info', 'SYSTEM', `Server started on port ${port}`);
+      log('SYSTEM', `Server started on port ${port}`);
   });
