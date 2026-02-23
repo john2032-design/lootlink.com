@@ -1,13 +1,17 @@
-{
-  "name": "loot-bypass-api",
-  "version": "1.0.0",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "puppeteer": "^21.5.0",
-    "ws": "^8.14.2"
+  {
+    "name": "vortix-bypass-api-split",
+    "version": "2.0.0",
+    "description": "Split endpoint API for Lootlink bypass",
+    "main": "server.js",
+    "scripts": {
+      "start": "node server.js"
+    },
+    "dependencies": {
+      "express": "^4.18.2",
+      "ws": "^8.16.0",
+      "cors": "^2.8.5"
+    },
+    "engines": {
+      "node": ">=16.0.0"
+    }
   }
-}
