@@ -36,16 +36,16 @@ export default async function handler(req, res) {
     }
     const taskId = initialData.task_id;
     let finalData = null;
-    const maxTime = 120000;
+    const maxTime = 90000;
     while (true) {
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 1000));
       const checkUrl = new URL('https://trw.lat/api/v2/threadcheck');
       checkUrl.searchParams.set('id', taskId);
       const checkRes = await fetch(checkUrl.toString(), { headers: { 'x-api-key': apiKey } });
       let checkData;
       try { checkData = await checkRes.json(); } catch { checkData = { status: 'error' }; }
       if (checkData.status === 'Done') { finalData = checkData; break; }
-      if (Date.now() - startTime > maxTime) { finalData = { success: false, result: 'Bypass timed out after 120s' }; break; }
+      if (Date.now() - startTime > maxTime) { finalData = { success: false, result: 'Bypass timed out after 90s' }; break; }
     }
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     const formatted = {
