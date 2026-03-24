@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/api/bypass?url=",
+      "statusCode": 302
+    }
+  ],
   "rewrites": [
     { "source": "/:path*", "destination": "/api/bypass" }
   ]
