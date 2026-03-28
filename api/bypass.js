@@ -1,5 +1,27 @@
 import { allowedDomains, supportedMessage } from './supportedDomains.js';
 
+const bypassFallbackDomains = new Set([
+  'linkvertise.com',
+  'cuty.io',
+  'ouo.io',
+  'lockr.so',
+  'rekonise.com',
+  'mboost.me',
+  'link-unlocker.com',
+  'mega.nz',
+  'mega.co.nz',
+  'direct-link.net',
+  'direct-links.net',
+  'direct-links.org',
+  'link-center.net',
+  'link-hub.net',
+  'link-pays.in',
+  'link-target.net',
+  'link-target.org',
+  'link-to.net',
+  'auth.platorelay.com'
+]);
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -35,29 +57,27 @@ export default async function handler(req, res) {
   }
   const startTime = Date.now();
   try {
-    const bypassResult = await bypassToolsDirect(targetUrlParam);
-    if (bypassResult.success) {
+    const trwResult = await attemptTrwBypass(incoming.search, apiKey);
+    if (trwResult.success) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       return res.status(200).json({
-        result: bypassResult.result,
+        result: trwResult.result,
         status: 'success',
         time: elapsed
       });
     }
-    if (allowedDomains.has(hostname)) {
-      const trwResult = await attemptTrwBypass(incoming.search, apiKey);
-      if (trwResult.success) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-        return res.status(200).json({
-          result: trwResult.result,
-          status: 'success',
-          time: elapsed
-        });
-      }
+    if (bypassFallbackDomains.has(hostname)) {
+      const bypassResult = await bypassToolsDirect(targetUrlParam);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      return res.status(200).json({
+        result: bypassResult.result,
+        status: bypassResult.success ? 'success' : 'error',
+        time: elapsed
+      });
     }
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     return res.status(200).json({
-      result: bypassResult.result,
+      result: trwResult.result,
       status: 'error',
       time: elapsed
     });
