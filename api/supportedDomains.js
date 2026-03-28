@@ -35,7 +35,8 @@ export const allowedDomains = new Set([
   'lootlink.org',
   'lootlinks.co',
   'workink.net',
-  'tpi.li'
+  'tpi.li',
+  'auth.plato'
 ]);
 
 export const supportedMessage = 'Only supported: Linkvertise, LootLabs, AdMaven, Work.ink, Beta.shortearn.eu, Cuty.io, ouo.io, Lockr, Rekonise, MBoost.me, link-unlocker.com, mega.nz, tpi.li (all Loot domains + workink.net kept)';
