@@ -8,8 +8,6 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ result: 'Only GET allowed', status: 'error', time: '0.00' });
   const apiKey = process.env.TRW_API_KEY;
   if (!apiKey) return res.status(500).json({ result: 'TRW_API_KEY missing in Vercel env vars', status: 'error', time: '0.00' });
-  const bypassApiKey = process.env.BYPASS_TOOLS_API_KEY;
-  if (!bypassApiKey) return res.status(500).json({ result: 'BYPASS_TOOLS_API_KEY missing in Vercel env vars', status: 'error', time: '0.00' });
   const incoming = new URL(req.url, `https://${req.headers.host}`);
   const targetUrlParam = incoming.searchParams.get('url');
   if (!targetUrlParam) return res.status(400).json({ result: 'Missing url parameter', status: 'error', time: '0.00' });
@@ -48,7 +46,7 @@ export default async function handler(req, res) {
         });
       }
     }
-    const bypassResult = await bypassToolsDirect(targetUrlParam, bypassApiKey);
+    const bypassResult = await bypassToolsDirect(targetUrlParam);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     return res.status(200).json({
       result: bypassResult.result,
@@ -87,7 +85,7 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
     }
     const taskId = initialData.task_id;
     let finalData = null;
-    const maxTime = 90000;
+    const maxTime = 70000;
     const pollStart = Date.now();
     while (true) {
       await new Promise(r => setTimeout(r, 1000));
@@ -106,14 +104,14 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
         break;
       }
       if (Date.now() - pollStart > maxTime) {
-        finalData = { success: false, result: 'Bypass Failed' };
+        finalData = { success: false, result: 'Bypass timed out after 90s' };
         break;
       }
     }
     const success = finalData.success === true;
     return {
       success,
-      result: finalData.result || (success ? 'No result returned' : 'Bypass failed')
+      result: finalData.result || (success ? 'No result returned' : 'TRW failed')
     };
   } catch (err) {
     return {
@@ -123,12 +121,12 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
   }
 }
 
-async function bypassToolsDirect(targetUrlStr, bypassApiKey) {
+async function bypassToolsDirect(targetUrlStr) {
   try {
     const response = await fetch('https://api.bypass.tools/api/v1/bypass/direct', {
       method: 'POST',
       headers: {
-        'x-api-key': bypassApiKey,
+        'x-api-key': 'bt_09009a360dd5e8b49cf1a68962f774d92136564fb5594c64',
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
       },
@@ -150,7 +148,7 @@ async function bypassToolsDirect(targetUrlStr, bypassApiKey) {
   } catch (err) {
     return {
       success: false,
-      result: `error: ${err.message}`
+      result: `Bypass.tools error: ${err.message}`
     };
   }
 }
