@@ -106,14 +106,14 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
         break;
       }
       if (Date.now() - pollStart > maxTime) {
-        finalData = { success: false, result: 'Bypass timed out after 90s' };
+        finalData = { success: false, result: 'Bypass Failed' };
         break;
       }
     }
     const success = finalData.success === true;
     return {
       success,
-      result: finalData.result || (success ? 'No result returned' : 'TRW failed')
+      result: finalData.result || (success ? 'No result returned' : 'Bypass failed')
     };
   } catch (err) {
     return {
@@ -150,7 +150,7 @@ async function bypassToolsDirect(targetUrlStr, bypassApiKey) {
   } catch (err) {
     return {
       success: false,
-      result: `Bypass.tools error: ${err.message}`
+      result: `error: ${err.message}`
     };
   }
 }
