@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     } catch (err) {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       return res.status(502).json({
-        result: `tpi.li bypass failed: ${err.message}`,
+        result: 'bypass failed',
         status: 'error',
         time: elapsed
       });
@@ -35,6 +35,15 @@ export default async function handler(req, res) {
   }
   const startTime = Date.now();
   try {
+    const bypassResult = await bypassToolsDirect(targetUrlParam);
+    if (bypassResult.success) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      return res.status(200).json({
+        result: bypassResult.result,
+        status: 'success',
+        time: elapsed
+      });
+    }
     if (allowedDomains.has(hostname)) {
       const trwResult = await attemptTrwBypass(incoming.search, apiKey);
       if (trwResult.success) {
@@ -46,17 +55,16 @@ export default async function handler(req, res) {
         });
       }
     }
-    const bypassResult = await bypassToolsDirect(targetUrlParam);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     return res.status(200).json({
       result: bypassResult.result,
-      status: bypassResult.success ? 'success' : 'error',
+      status: 'error',
       time: elapsed
     });
   } catch (err) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     return res.status(502).json({
-      result: `Proxy error: ${err.message}`,
+      result: 'bypass failed',
       status: 'error',
       time: elapsed
     });
@@ -104,7 +112,7 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
         break;
       }
       if (Date.now() - pollStart > maxTime) {
-        finalData = { success: false, result: 'Bypass timed out after 90s' };
+        finalData = { success: false, result: 'request timed out' };
         break;
       }
     }
@@ -116,7 +124,7 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
   } catch (err) {
     return {
       success: false,
-      result: err.message
+      result: 'bypass failed'
     };
   }
 }
@@ -142,13 +150,13 @@ async function bypassToolsDirect(targetUrlStr) {
     } else {
       return {
         success: false,
-        result: data.message || 'Bypass.tools failed'
+        result: 'bypass failed'
       };
     }
   } catch (err) {
     return {
       success: false,
-      result: `Bypass.tools error: ${err.message}`
+      result: 'bypass failed'
     };
   }
 }
