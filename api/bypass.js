@@ -79,40 +79,61 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   const refresh = incoming.searchParams.get('refresh') === 'true';
 
+  console.log(`[DEBUG] Processing ${hostname}, trwFirst: ${trwFirstDomains.has(hostname)}, bypassTools: ${bypassToolsDomains.has(hostname)}`);
+
   try {
     let result = null;
     let success = false;
 
     if (trwFirstDomains.has(hostname)) {
+      console.log('[DEBUG] TRW first path');
       const trwResult = await attemptTrwBypass(incoming.search, apiKey);
       if (trwResult.success) {
+        console.log('[DEBUG] TRW success');
         success = true;
         result = trwResult.result;
       } else if (bypassToolsDomains.has(hostname)) {
+        console.log('[DEBUG] TRW failed, trying bypassTools');
         const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
         if (bypassResult.success) {
-          success = true;
-          result = bypassResult.result;
-        }
-      }
-    } else {
-      if (bypassToolsDomains.has(hostname)) {
-        const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
-        if (bypassResult.success) {
+          console.log('[DEBUG] bypassTools success');
           success = true;
           result = bypassResult.result;
         } else {
+          console.log('[DEBUG] bypassTools failed');
+        }
+      } else {
+        console.log('[DEBUG] TRW failed and bypassTools not supported');
+      }
+    } else {
+      console.log('[DEBUG] Not TRW first');
+      if (bypassToolsDomains.has(hostname)) {
+        console.log('[DEBUG] Trying bypassTools first');
+        const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
+        if (bypassResult.success) {
+          console.log('[DEBUG] bypassTools success');
+          success = true;
+          result = bypassResult.result;
+        } else {
+          console.log('[DEBUG] bypassTools failed, trying TRW');
           const trwResult = await attemptTrwBypass(incoming.search, apiKey);
           if (trwResult.success) {
+            console.log('[DEBUG] TRW success');
             success = true;
             result = trwResult.result;
+          } else {
+            console.log('[DEBUG] TRW also failed');
           }
         }
       } else {
+        console.log('[DEBUG] bypassTools not supported, trying TRW');
         const trwResult = await attemptTrwBypass(incoming.search, apiKey);
         if (trwResult.success) {
+          console.log('[DEBUG] TRW success');
           success = true;
           result = trwResult.result;
+        } else {
+          console.log('[DEBUG] TRW failed');
         }
       }
     }
@@ -132,7 +153,8 @@ export default async function handler(req, res) {
         time: elapsed
       });
     }
-  } catch {
+  } catch (err) {
+    console.error('[DEBUG] Top level error:', err);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     return res.status(502).json({
       result: 'bypass failed',
@@ -210,7 +232,8 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
       success,
       result: finalData.result || (success ? 'No result returned' : 'TRW failed')
     };
-  } catch {
+  } catch (err) {
+    console.error('[DEBUG] TRW error:', err);
     return {
       success: false,
       result: 'bypass failed'
@@ -220,6 +243,8 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
 
 async function bypassToolsDirect(targetUrlStr, refresh = false) {
   const apiKey = 'bt_09009a360dd5e8b49cf1a68962f774d92136564fb5594c64';
+
+  console.log(`[DEBUG] bypassToolsDirect called for ${targetUrlStr}, refresh=${refresh}`);
 
   try {
     const controller = new AbortController();
@@ -248,21 +273,17 @@ async function bypassToolsDirect(targetUrlStr, refresh = false) {
     }
 
     const data = await response.json();
+    console.log('[DEBUG] bypassTools response:', JSON.stringify(data));
 
     if (data.status === 'success' && data.result) {
       const resultStr = data.result.trim();
-      if (resultStr.startsWith('http://') || resultStr.startsWith('https://')) {
-        return { success: true, result: resultStr };
-      } else {
-        console.warn('Bypass.tools returned non-URL result:', resultStr);
-        return { success: false, result: 'bypass failed (non-URL result)' };
-      }
+      return { success: true, result: resultStr };
     }
 
-    console.warn('Bypass.tools unexpected response:', data);
+    console.warn('[DEBUG] bypassTools non-success response:', data);
     return { success: false, result: 'bypass failed' };
   } catch (err) {
-    console.error('Bypass.tools error:', err.message);
+    console.error('[DEBUG] bypassTools fetch error:', err.message);
     return { success: false, result: 'bypass failed' };
   }
 }
