@@ -77,6 +77,7 @@ export default async function handler(req, res) {
   }
 
   const startTime = Date.now();
+  const refresh = incoming.searchParams.get('refresh') === 'true';
 
   try {
     if (trwFirstDomains.has(hostname)) {
@@ -92,7 +93,7 @@ export default async function handler(req, res) {
     }
 
     if (bypassToolsDomains.has(hostname)) {
-      const bypassResult = await bypassToolsDirect(targetUrlParam);
+      const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       return res.status(200).json({
         result: bypassResult.result,
@@ -203,22 +204,34 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
   }
 }
 
-async function bypassToolsDirect(targetUrlStr) {
+async function bypassToolsDirect(targetUrlStr, refresh = false) {
+  const apiKey = 'bt_09009a360dd5e8b49cf1a68962f774d92136564fb5594c64';
+
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 65000);
+
     const response = await fetch('https://api.bypass.tools/api/v1/bypass/direct', {
       method: 'POST',
       headers: {
-        'x-api-key': 'bt_09009a360dd5e8b49cf1a68962f774d92136564fb5594c64',
+        'x-api-key': apiKey,
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
       },
-      body: JSON.stringify({
-        url: targetUrlStr,
-        refresh: false
-      })
+      body: JSON.stringify({ url: targetUrlStr, refresh }),
+      signal: controller.signal,
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorBody = await response.json();
+        if (errorBody.message) errorMessage = errorBody.message;
+      } catch {
+      }
+      throw new Error(errorMessage);
+    }
 
     const data = await response.json();
 
@@ -226,15 +239,11 @@ async function bypassToolsDirect(targetUrlStr) {
       return { success: true, result: data.result };
     }
 
-    return {
-      success: false,
-      result: 'bypass failed'
-    };
-  } catch {
-    return {
-      success: false,
-      result: 'bypass failed'
-    };
+    console.warn('Bypass.tools unexpected response:', data);
+    return { success: false, result: 'bypass failed' };
+  } catch (err) {
+    console.error('Bypass.tools error:', err.message);
+    return { success: false, result: 'bypass failed' };
   }
 }
 
