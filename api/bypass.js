@@ -250,7 +250,13 @@ async function bypassToolsDirect(targetUrlStr, refresh = false) {
     const data = await response.json();
 
     if (data.status === 'success' && data.result) {
-      return { success: true, result: data.result };
+      const resultStr = data.result.trim();
+      if (resultStr.startsWith('http://') || resultStr.startsWith('https://')) {
+        return { success: true, result: resultStr };
+      } else {
+        console.warn('Bypass.tools returned non-URL result:', resultStr);
+        return { success: false, result: 'bypass failed (non-URL result)' };
+      }
     }
 
     console.warn('Bypass.tools unexpected response:', data);
