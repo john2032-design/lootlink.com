@@ -242,7 +242,7 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
 }
 
 async function bypassToolsDirect(targetUrlStr, refresh = false) {
-  const apiKey = 'bt_09009a360dd5e8b49cf1a68962f774d92136564fb5594c64';
+  const apiKey = 'bt_eccaf5046df0bc507ca14958091de0bdb8a2decef0ff802a';
 
   console.log(`[DEBUG] bypassToolsDirect called for ${targetUrlStr}, refresh=${refresh}`);
 
