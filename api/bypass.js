@@ -80,44 +80,58 @@ export default async function handler(req, res) {
   const refresh = incoming.searchParams.get('refresh') === 'true';
 
   try {
+    let result = null;
+    let success = false;
+
     if (trwFirstDomains.has(hostname)) {
       const trwResult = await attemptTrwBypass(incoming.search, apiKey);
       if (trwResult.success) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-        return res.status(200).json({
-          result: trwResult.result,
-          status: 'success',
-          time: elapsed
-        });
+        success = true;
+        result = trwResult.result;
+      } else if (bypassToolsDomains.has(hostname)) {
+        const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
+        if (bypassResult.success) {
+          success = true;
+          result = bypassResult.result;
+        }
+      }
+    } else {
+      if (bypassToolsDomains.has(hostname)) {
+        const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
+        if (bypassResult.success) {
+          success = true;
+          result = bypassResult.result;
+        } else {
+          const trwResult = await attemptTrwBypass(incoming.search, apiKey);
+          if (trwResult.success) {
+            success = true;
+            result = trwResult.result;
+          }
+        }
+      } else {
+        const trwResult = await attemptTrwBypass(incoming.search, apiKey);
+        if (trwResult.success) {
+          success = true;
+          result = trwResult.result;
+        }
       }
     }
 
-    if (bypassToolsDomains.has(hostname)) {
-      const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-      return res.status(200).json({
-        result: bypassResult.result,
-        status: bypassResult.success ? 'success' : 'error',
-        time: elapsed
-      });
-    }
-
-    if (!trwFirstDomains.has(hostname)) {
-      const trwResult = await attemptTrwBypass(incoming.search, apiKey);
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-      return res.status(200).json({
-        result: trwResult.result,
-        status: trwResult.success ? 'success' : 'error',
-        time: elapsed
-      });
-    }
-
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-    return res.status(200).json({
-      result: 'bypass failed',
-      status: 'error',
-      time: elapsed
-    });
+
+    if (success) {
+      return res.status(200).json({
+        result: result,
+        status: 'success',
+        time: elapsed
+      });
+    } else {
+      return res.status(200).json({
+        result: 'bypass failed',
+        status: 'error',
+        time: elapsed
+      });
+    }
   } catch {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     return res.status(502).json({
