@@ -1,4 +1,4 @@
-import { allowedDomains, bypassToolsDomains, trwFirstDomains, supportedMessage } from './supportedDomains.js';
+import { allowedDomains, trwFirstDomains, supportedMessage } from './supportedDomains.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -77,82 +77,26 @@ export default async function handler(req, res) {
   }
 
   const startTime = Date.now();
-  const refresh = incoming.searchParams.get('refresh') === 'true';
 
-  console.log(`[DEBUG] Processing ${hostname}, trwFirst: ${trwFirstDomains.has(hostname)}, bypassTools: ${bypassToolsDomains.has(hostname)}`);
+  console.log(`[DEBUG] Processing ${hostname}, trwFirst: ${trwFirstDomains.has(hostname)}`);
 
   try {
-    let result = null;
-    let success = false;
-
-    if (trwFirstDomains.has(hostname)) {
-      console.log('[DEBUG] TRW first path');
-      const trwResult = await attemptTrwBypass(incoming.search, apiKey);
-      if (trwResult.success) {
-        console.log('[DEBUG] TRW success');
-        success = true;
-        result = trwResult.result;
-      } else if (bypassToolsDomains.has(hostname)) {
-        console.log('[DEBUG] TRW failed, trying bypassTools');
-        const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
-        if (bypassResult.success) {
-          console.log('[DEBUG] bypassTools success');
-          success = true;
-          result = bypassResult.result;
-        } else {
-          console.log('[DEBUG] bypassTools failed');
-        }
-      } else {
-        console.log('[DEBUG] TRW failed and bypassTools not supported');
-      }
-    } else {
-      console.log('[DEBUG] Not TRW first');
-      if (bypassToolsDomains.has(hostname)) {
-        console.log('[DEBUG] Trying bypassTools first');
-        const bypassResult = await bypassToolsDirect(targetUrlParam, refresh);
-        if (bypassResult.success) {
-          console.log('[DEBUG] bypassTools success');
-          success = true;
-          result = bypassResult.result;
-        } else {
-          console.log('[DEBUG] bypassTools failed, trying TRW');
-          const trwResult = await attemptTrwBypass(incoming.search, apiKey);
-          if (trwResult.success) {
-            console.log('[DEBUG] TRW success');
-            success = true;
-            result = trwResult.result;
-          } else {
-            console.log('[DEBUG] TRW also failed');
-          }
-        }
-      } else {
-        console.log('[DEBUG] bypassTools not supported, trying TRW');
-        const trwResult = await attemptTrwBypass(incoming.search, apiKey);
-        if (trwResult.success) {
-          console.log('[DEBUG] TRW success');
-          success = true;
-          result = trwResult.result;
-        } else {
-          console.log('[DEBUG] TRW failed');
-        }
-      }
-    }
-
+    const trwResult = await attemptTrwBypass(incoming.search, apiKey);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
-    if (success) {
+    if (trwResult.success) {
       return res.status(200).json({
-        result: result,
+        result: trwResult.result,
         status: 'success',
         time: elapsed
       });
-    } else {
-      return res.status(200).json({
-        result: 'bypass failed',
-        status: 'error',
-        time: elapsed
-      });
     }
+
+    return res.status(200).json({
+      result: 'bypass failed',
+      status: 'error',
+      time: elapsed
+    });
   } catch (err) {
     console.error('[DEBUG] Top level error:', err);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -238,53 +182,6 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
       success: false,
       result: 'bypass failed'
     };
-  }
-}
-
-async function bypassToolsDirect(targetUrlStr, refresh = false) {
-  const apiKey = 'bt_eccaf5046df0bc507ca14958091de0bdb8a2decef0ff802a';
-
-  console.log(`[DEBUG] bypassToolsDirect called for ${targetUrlStr}, refresh=${refresh}`);
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 65000);
-
-    const response = await fetch('https://api.bypass.tools/api/v1/bypass/direct', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url: targetUrlStr, refresh }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const errorBody = await response.json();
-        if (errorBody.message) errorMessage = errorBody.message;
-      } catch {
-      }
-      throw new Error(errorMessage);
-    }
-
-    const data = await response.json();
-    console.log('[DEBUG] bypassTools response:', JSON.stringify(data));
-
-    if (data.status === 'success' && data.result) {
-      const resultStr = data.result.trim();
-      return { success: true, result: resultStr };
-    }
-
-    console.warn('[DEBUG] bypassTools non-success response:', data);
-    return { success: false, result: 'bypass failed' };
-  } catch (err) {
-    console.error('[DEBUG] bypassTools fetch error:', err.message);
-    return { success: false, result: 'bypass failed' };
   }
 }
 
