@@ -90,10 +90,6 @@ export const allowedDomains = new Set([
   'ad-link.link'
 ]);
 
-export const bypassToolsDomains = new Set([
-
-]);
-
 export const trwFirstDomains = new Set([
   'linkvertise.com',
   'admaven.com',
