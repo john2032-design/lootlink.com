@@ -80,8 +80,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         result: izenResult.result,
         status: 'success',
-        time: elapsed,
-        cached: izenResult.cached
+        time: elapsed
       });
     }
 
@@ -149,8 +148,7 @@ async function attemptIzenBypass(targetUrl, apiKey) {
     if (data?.status === 'success' && data?.result) {
       return {
         success: true,
-        result: data.result,
-        cached: data.cached
+        result: data.result
       };
     }
 
