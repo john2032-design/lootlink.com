@@ -15,20 +15,11 @@ export default async function handler(req, res) {
     });
   }
 
-  const bypassToolsApiKey = process.env.BYPASS_TOOLS_API_KEY || process.env.BT_API_KEY || process.env.BYPASSTOOLS_API_KEY;
+  const izenApiKey = process.env.IZEN_API_KEY || process.env.BYPASS_API_KEY || process.env.API_KEY;
   const trwApiKey = process.env.TRW_API_KEY;
-
-  if (!bypassToolsApiKey && !trwApiKey) {
-    return res.status(500).json({
-      result: 'Missing API keys in Vercel env vars',
-      status: 'error',
-      time: '0.00'
-    });
-  }
 
   const incoming = new URL(req.url, `https://${req.headers.host}`);
   const targetUrlParam = incoming.searchParams.get('url');
-  const refresh = incoming.searchParams.get('refresh') === 'true' || incoming.searchParams.get('refresh') === '1';
 
   if (!targetUrlParam) {
     return res.status(400).json({
@@ -82,43 +73,40 @@ export default async function handler(req, res) {
   const startTime = Date.now();
 
   try {
-    if (bypassToolsApiKey) {
-      const bypassToolsResult = await attemptBypassTools(targetUrl.toString(), refresh, bypassToolsApiKey);
-      if (bypassToolsResult.success) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-        return res.status(200).json({
-          result: bypassToolsResult.result,
-          status: 'success',
-          time: elapsed,
-          cached: bypassToolsResult.cached,
-          processTime: bypassToolsResult.processTime,
-          requestId: bypassToolsResult.requestId
-        });
-      }
+    const izenResult = await attemptIzenBypass(targetUrl.toString(), izenApiKey);
+
+    if (izenResult.success) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      return res.status(200).json({
+        result: izenResult.result,
+        status: 'success',
+        time: elapsed,
+        cached: izenResult.cached
+      });
     }
 
-    if (!trwApiKey) {
+    if (trwFirstDomains.has(hostname) && trwApiKey) {
+      const trwResult = await attemptTrwBypass(targetUrl.toString(), trwApiKey);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-      return res.status(502).json({
-        result: 'bypass failed',
+
+      if (trwResult.success) {
+        return res.status(200).json({
+          result: trwResult.result,
+          status: 'success',
+          time: elapsed
+        });
+      }
+
+      return res.status(200).json({
+        result: trwResult.result || izenResult.result || 'bypass failed',
         status: 'error',
         time: elapsed
       });
     }
 
-    const trwResult = await attemptTrwBypass(targetUrl.toString(), trwApiKey);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-
-    if (trwResult.success) {
-      return res.status(200).json({
-        result: trwResult.result,
-        status: 'success',
-        time: elapsed
-      });
-    }
-
     return res.status(200).json({
-      result: 'bypass failed',
+      result: izenResult.result || 'bypass failed',
       status: 'error',
       time: elapsed
     });
@@ -132,21 +120,19 @@ export default async function handler(req, res) {
   }
 }
 
-async function attemptBypassTools(targetUrl, refresh, apiKey) {
+async function attemptIzenBypass(targetUrl, apiKey) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
-    const response = await fetch('https://api.bypass.tools/api/v1/bypass/direct', {
-      method: 'POST',
+    const endpoint = new URL('https://api.izen.lol/v1/bypass');
+    endpoint.searchParams.set('url', targetUrl);
+
+    const response = await fetch(endpoint.toString(), {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey
+        'x-api-key': apiKey || ''
       },
-      body: JSON.stringify({
-        url: targetUrl,
-        refresh: !!refresh
-      }),
       signal: controller.signal
     });
 
@@ -160,19 +146,17 @@ async function attemptBypassTools(targetUrl, refresh, apiKey) {
       };
     }
 
-    if (data && data.status === 'success' && data.result) {
+    if (data?.status === 'success' && data?.result) {
       return {
         success: true,
         result: data.result,
-        cached: data.cached,
-        processTime: data.processTime,
-        requestId: data.requestId
+        cached: data.cached
       };
     }
 
     return {
       success: false,
-      result: data?.message || data?.result || 'bypass failed'
+      result: data?.result || data?.message || data?.code || 'bypass failed'
     };
   } catch {
     return {
