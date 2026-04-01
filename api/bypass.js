@@ -3,7 +3,7 @@ import { allowedDomains, trwFirstDomains, supportedMessage } from './supportedDo
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, *');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -15,10 +15,12 @@ export default async function handler(req, res) {
     });
   }
 
-  const apiKey = process.env.TRW_API_KEY;
-  if (!apiKey) {
+  const bypassToolsApiKey = process.env.BYPASS_TOOLS_API_KEY || process.env.BT_API_KEY || process.env.BYPASSTOOLS_API_KEY;
+  const trwApiKey = process.env.TRW_API_KEY;
+
+  if (!bypassToolsApiKey && !trwApiKey) {
     return res.status(500).json({
-      result: 'TRW_API_KEY missing in Vercel env vars',
+      result: 'Missing API keys in Vercel env vars',
       status: 'error',
       time: '0.00'
     });
@@ -26,6 +28,7 @@ export default async function handler(req, res) {
 
   const incoming = new URL(req.url, `https://${req.headers.host}`);
   const targetUrlParam = incoming.searchParams.get('url');
+  const refresh = incoming.searchParams.get('refresh') === 'true' || incoming.searchParams.get('refresh') === '1';
 
   if (!targetUrlParam) {
     return res.status(400).json({
@@ -78,10 +81,32 @@ export default async function handler(req, res) {
 
   const startTime = Date.now();
 
-  console.log(`[DEBUG] Processing ${hostname}, trwFirst: ${trwFirstDomains.has(hostname)}`);
-
   try {
-    const trwResult = await attemptTrwBypass(incoming.search, apiKey);
+    if (bypassToolsApiKey) {
+      const bypassToolsResult = await attemptBypassTools(targetUrl.toString(), refresh, bypassToolsApiKey);
+      if (bypassToolsResult.success) {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+        return res.status(200).json({
+          result: bypassToolsResult.result,
+          status: 'success',
+          time: elapsed,
+          cached: bypassToolsResult.cached,
+          processTime: bypassToolsResult.processTime,
+          requestId: bypassToolsResult.requestId
+        });
+      }
+    }
+
+    if (!trwApiKey) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      return res.status(502).json({
+        result: 'bypass failed',
+        status: 'error',
+        time: elapsed
+      });
+    }
+
+    const trwResult = await attemptTrwBypass(targetUrl.toString(), trwApiKey);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
     if (trwResult.success) {
@@ -97,8 +122,7 @@ export default async function handler(req, res) {
       status: 'error',
       time: elapsed
     });
-  } catch (err) {
-    console.error('[DEBUG] Top level error:', err);
+  } catch {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     return res.status(502).json({
       result: 'bypass failed',
@@ -108,15 +132,68 @@ export default async function handler(req, res) {
   }
 }
 
-async function attemptTrwBypass(incomingSearch, trwApiKey) {
+async function attemptBypassTools(targetUrl, refresh, apiKey) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch('https://api.bypass.tools/api/v1/bypass/direct', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify({
+        url: targetUrl,
+        refresh: !!refresh
+      }),
+      signal: controller.signal
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      return {
+        success: false,
+        result: 'bypass failed'
+      };
+    }
+
+    if (data && data.status === 'success' && data.result) {
+      return {
+        success: true,
+        result: data.result,
+        cached: data.cached,
+        processTime: data.processTime,
+        requestId: data.requestId
+      };
+    }
+
+    return {
+      success: false,
+      result: data?.message || data?.result || 'bypass failed'
+    };
+  } catch {
+    return {
+      success: false,
+      result: 'bypass failed'
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function attemptTrwBypass(targetUrl, trwApiKey) {
   try {
     const trwBypass = new URL('https://trw.lat/api/bypass');
-    trwBypass.search = incomingSearch;
+    trwBypass.searchParams.set('url', targetUrl);
     trwBypass.searchParams.set('mode', 'thread');
     trwBypass.searchParams.delete('apikey');
     trwBypass.searchParams.delete('bcToken');
 
     const initialRes = await fetch(trwBypass.toString(), {
+      method: 'GET',
       headers: {
         'x-api-key': trwApiKey,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
@@ -146,6 +223,7 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
       checkUrl.searchParams.set('id', taskId);
 
       const checkRes = await fetch(checkUrl.toString(), {
+        method: 'GET',
         headers: {
           'x-api-key': trwApiKey,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
@@ -176,8 +254,7 @@ async function attemptTrwBypass(incomingSearch, trwApiKey) {
       success,
       result: finalData.result || (success ? 'No result returned' : 'TRW failed')
     };
-  } catch (err) {
-    console.error('[DEBUG] TRW error:', err);
+  } catch {
     return {
       success: false,
       result: 'bypass failed'
@@ -223,6 +300,7 @@ async function resolveTpiLi(shortUrl) {
 
 async function fetchHtml(url) {
   const response = await fetch(url, {
+    method: 'GET',
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
     }
