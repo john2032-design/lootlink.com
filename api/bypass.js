@@ -42,6 +42,26 @@ export default async function handler(req, res) {
 
   const hostname = targetUrl.hostname.toLowerCase().replace(/^www\./, '');
 
+  if (hostname === 'work.ink' || hostname === 'workink.net') {
+    const startTime = Date.now();
+    const tirexResult = await attemptTirexBypass(targetUrl.toString());
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+
+    if (tirexResult.success) {
+      return res.status(200).json({
+        result: tirexResult.result,
+        status: 'success',
+        time: elapsed
+      });
+    }
+
+    return res.status(502).json({
+      result: tirexResult.result || 'bypass failed',
+      status: 'error',
+      time: elapsed
+    });
+  }
+
   if (hostname === 'tpi.li') {
     const startTime = Date.now();
     try {
@@ -116,6 +136,45 @@ export default async function handler(req, res) {
       status: 'error',
       time: elapsed
     });
+  }
+}
+
+async function attemptTirexBypass(targetUrl) {
+  try {
+    const endpoint = new URL('https://tirex-api.vercel.app/bypass');
+    endpoint.searchParams.set('key', 'tirex-678f52347c');
+    endpoint.searchParams.set('url', targetUrl);
+
+    const response = await fetch(endpoint.toString(), {
+      method: 'GET'
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      return {
+        success: false,
+        result: 'bypass failed'
+      };
+    }
+
+    if (data?.status === 'success' && data?.result) {
+      return {
+        success: true,
+        result: data.result
+      };
+    }
+
+    return {
+      success: false,
+      result: data?.result || 'bypass failed'
+    };
+  } catch {
+    return {
+      success: false,
+      result: 'bypass failed'
+    };
   }
 }
 
