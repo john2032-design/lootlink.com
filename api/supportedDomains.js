@@ -184,16 +184,8 @@ export const allowedDomains = new Set([
 ]);
 
 export const trwFirstDomains = new Set([
-  'linkvertise.com',
-  'admaven.com',
-  'beta.shortearn.eu',
-  'cuty.io',
-  'ouo.io',
-  'lockr.so',
-  'rekonise.com',
-  'mboost.me',
-  'link-unlocker.com',
-  'mega.nz'
+  'work.ink',
+  'workink.net'
 ]);
 
 export const supportedMessage = 'Only supported: Executor Key Systems, Ad-Shorteners, Social Unlocks, Paste Sites, URL Shorteners, and tpi.li.';
