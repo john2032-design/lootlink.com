@@ -183,9 +183,4 @@ export const allowedDomains = new Set([
   'sub4unlock.pro'
 ]);
 
-export const trwFirstDomains = new Set([
-  'work.ink',
-  'workink.net'
-]);
-
 export const supportedMessage = 'Only supported: Executor Key Systems, Ad-Shorteners, Social Unlocks, Paste Sites, URL Shorteners, and tpi.li.';
