@@ -84,7 +84,7 @@ async function attemptIzenBypass(targetUrl, apiKey) {
   const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
-    const endpoint = new URL('https://api.izen.lol/v1/refresh');
+    const endpoint = new URL('https://api.izen.lol/v1/bypass');
     endpoint.searchParams.set('url', targetUrl);
 
     const response = await fetch(endpoint.toString(), {
