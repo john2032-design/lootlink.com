@@ -52,7 +52,7 @@ export default async function handler(req, res) {
   const startTime = Date.now();
 
   try {
-    const trwDomains = new Set(['cuty.io', 'cety.io', 'cuttslinks.com']);
+    const trwDomains = new Set(['cuty.io', 'cety.io', 'cuttlinks.com', 'cuttslinks.com']);
     let bypassResult;
 
     if (trwDomains.has(hostname)) {
