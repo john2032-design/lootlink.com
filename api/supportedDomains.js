@@ -3,6 +3,7 @@ export const allowedDomains = new Set([
   'link-to.net',
   'link-hub.net',
   'loot-link.com',
+  'cuttlinks.com',
   'lootdest.org',
   'free-content.pro',
   'work.ink',
