@@ -31,6 +31,7 @@ export const allowedDomains = new Set([
   'ez4short.com',
   'cuty.io',
   'cety.io',
+  'cuttslinks.com',
   'boost.ink',
   'adfoc.us',
   'mendationforc.info',
