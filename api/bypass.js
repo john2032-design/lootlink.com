@@ -52,20 +52,27 @@ export default async function handler(req, res) {
   const startTime = Date.now();
 
   try {
-    const izenResult = await attemptIzenBypass(targetUrl.toString(), izenApiKey);
+    const trwDomains = new Set(['cuty.io', 'cety.io', 'cuttslinks.com']);
+    let bypassResult;
+
+    if (trwDomains.has(hostname)) {
+      bypassResult = await attemptTrwBypass(targetUrl.toString());
+    } else {
+      bypassResult = await attemptIzenBypass(targetUrl.toString(), izenApiKey);
+    }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
-    if (izenResult.success) {
+    if (bypassResult.success) {
       return res.status(200).json({
-        result: izenResult.result,
+        result: bypassResult.result,
         status: 'success',
         time: elapsed
       });
     }
 
     return res.status(200).json({
-      result: izenResult.result || 'bypass failed',
+      result: bypassResult.result || 'bypass failed',
       status: 'error',
       time: elapsed
     });
@@ -76,6 +83,54 @@ export default async function handler(req, res) {
       status: 'error',
       time: elapsed
     });
+  }
+}
+
+async function attemptTrwBypass(targetUrl) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+
+  try {
+    const endpoint = new URL('https://trw.lat/api/bypass');
+    endpoint.searchParams.set('url', targetUrl);
+    endpoint.searchParams.set('mode', 'normal');
+
+    const response = await fetch(endpoint.toString(), {
+      method: 'GET',
+      headers: {
+        'x-api-key': 'TRW_FREE-GAY-15a92945-9b04-4c75-8337-f2a6007281e9'
+      },
+      signal: controller.signal
+    });
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      return {
+        success: false,
+        result: 'bypass failed'
+      };
+    }
+
+    if (data?.success === true && data?.result) {
+      return {
+        success: true,
+        result: data.result
+      };
+    }
+
+    return {
+      success: false,
+      result: data?.result || 'bypass failed'
+    };
+  } catch {
+    return {
+      success: false,
+      result: 'bypass failed'
+    };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
